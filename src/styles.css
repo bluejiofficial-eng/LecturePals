@@ -161,10 +161,13 @@ button.chip { border: 0; cursor: pointer; }
 .avatar {
   display: inline-grid;
   place-items: center;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   color: #fffdf8;
   font-weight: 700;
-  flex: none;
+  flex: 0 0 auto;
+  overflow: hidden;
 }
 .sr-only {
   position: absolute;
@@ -355,7 +358,7 @@ button.chip { border: 0; cursor: pointer; }
 .group-actions, .hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .member-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .member-list li { justify-content: flex-start; }
-.member-list li span { flex: 1; }
+.member-list li > span:not(.avatar) { flex: 1; }
 .confirm-row {
   background: #fde8e8;
   border-radius: 12px;
