@@ -5,7 +5,7 @@ import { useTitle, Wordmark } from "../components/ui.jsx";
 const STEPS = [
   ["Sign up with a .edu email", "Accounts stay inside the university, so the people you meet are students."],
   ["List your sections and free times", "Add your major, the sections you are taking, and when you can study."],
-  ["Find, join, or message", "Search by course code and topic, post a campus session, or write a classmate."],
+  ["Find, join, or get reminded", "Search by topic, post a session, and get an invite or reminder before you meet."],
 ];
 
 const FEATURES = [
@@ -14,6 +14,7 @@ const FEATURES = [
   ["03", "Search and filter", "Find classmates by the exact course section and a specific syllabus topic."],
   ["04", "Study sessions", "Post a topic, date, time, and campus location so students in the section can join."],
   ["05", "Direct messages", "Coordinate with classmates who share your section, without a class-wide group chat."],
+  ["06", "Reminders", "Invites and upcoming sessions arrive by email, on your calendar, and as a browser alert."],
 ];
 
 export default function Landing() {

@@ -2,6 +2,8 @@ import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth.jsx";
 import Shell from "./components/Shell.jsx";
 import AuthPage from "./pages/AuthPage.jsx";
+import Alerts from "./pages/Alerts.jsx";
+import Calendar from "./pages/Calendar.jsx";
 import Find from "./pages/Find.jsx";
 import Groups from "./pages/Groups.jsx";
 import Home from "./pages/Home.jsx";
@@ -44,6 +46,8 @@ function AppRoutes() {
         <Route path="profile" element={<Profile />} />
         <Route path="find" element={<Find />} />
         <Route path="groups" element={<Groups />} />
+        <Route path="calendar" element={<Calendar />} />
+        <Route path="alerts" element={<Alerts />} />
         <Route path="messages" element={<Messages />} />
         <Route path="messages/:conversationId" element={<Messages />} />
       </Route>

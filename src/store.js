@@ -1,4 +1,4 @@
-const STORAGE_KEY = "lecturepals-v1";
+const STORAGE_KEY = "lecturepals-v2";
 const SESSION_KEY = "lecturepals-session";
 
 export const DEMO_EMAIL = "avery.quinn@stateu.edu";
@@ -138,7 +138,7 @@ export function todayISO() {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-function dateFromToday(offset) {
+export function dateFromToday(offset) {
   const date = new Date();
   date.setDate(date.getDate() + offset);
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -233,7 +233,7 @@ async function createSeed() {
     ...fields,
   });
 
-  return {
+  const seed = {
     users: [
       user({
         id: "user-avery",
@@ -426,14 +426,64 @@ async function createSeed() {
         createdAt: hoursAgo(2),
       },
     ],
+    invites: [],
+    alerts: [],
   };
+
+  const norm = seed.groups.find((group) => group.id === "group-norm");
+  const er = seed.groups.find((group) => group.id === "group-er");
+  seed.invites.push({
+    id: "invite-norm",
+    groupId: "group-norm",
+    fromId: "user-maya",
+    toId: "user-avery",
+    status: "pending",
+    createdAt: hoursAgo(3),
+  });
+  seed.alerts.push(
+    {
+      id: "alert-invite-norm",
+      userId: "user-avery",
+      kind: "invite",
+      inviteId: "invite-norm",
+      groupId: "group-norm",
+      title: "Study session invite",
+      body: `Maya Chen invited you to Normalization, ${formatLongDate(norm.date)}, ${formatClock(norm.start)}–${formatClock(norm.end)} at ${norm.location}.`,
+      createdAt: hoursAgo(3),
+      read: false,
+      pushed: false,
+    },
+    {
+      id: "alert-reminder-er",
+      userId: "user-avery",
+      kind: "reminder",
+      inviteId: null,
+      groupId: "group-er",
+      title: "Session reminder",
+      body: `ER Diagrams meets ${formatLongDate(er.date)}, ${formatClock(er.start)}–${formatClock(er.end)} at ${er.location}.`,
+      createdAt: hoursAgo(1),
+      read: false,
+      pushed: false,
+    },
+  );
+  return seed;
+}
+
+function normalize(saved) {
+  saved.users ||= [];
+  saved.groups ||= [];
+  saved.conversations ||= [];
+  saved.messages ||= [];
+  saved.invites ||= [];
+  saved.alerts ||= [];
+  return saved;
 }
 
 async function load() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
     try {
-      state = JSON.parse(raw);
+      state = normalize(JSON.parse(raw));
       return state;
     } catch {
       localStorage.removeItem(STORAGE_KEY);
@@ -688,8 +738,13 @@ export function joinGroup(userId, groupId) {
     return { ok: false, error: "Only students in this section can join." };
   }
   if (!group.memberIds.includes(userId)) group.memberIds.push(userId);
+  const invite = state.invites.find(
+    (entry) => entry.groupId === groupId && entry.toId === userId && entry.status === "pending",
+  );
+  if (invite) invite.status = "accepted";
+  const alerts = remindIfSoon(userId, group);
   persist();
-  return { ok: true, group: presentGroup(group) };
+  return { ok: true, group: presentGroup(group), alerts };
 }
 
 export function leaveGroup(userId, groupId) {
@@ -708,9 +763,223 @@ export function cancelGroup(userId, groupId) {
   if (!group || group.hostId !== userId) {
     return { ok: false, error: "Only the host can cancel this session." };
   }
+  const host = getUser(userId);
+  const alerts = [];
+  for (const memberId of group.memberIds) {
+    if (memberId === userId) continue;
+    alerts.push(
+      addAlert({
+        userId: memberId,
+        kind: "cancelled",
+        groupId: group.id,
+        title: "Session cancelled",
+        body: `${host?.name || "The host"} cancelled ${group.topic} on ${formatLongDate(group.date)}.`,
+      }),
+    );
+  }
+  for (const invite of state.invites) {
+    if (invite.groupId === groupId && invite.status === "pending") invite.status = "cancelled";
+  }
   state.groups = state.groups.filter((entry) => entry.id !== groupId);
   persist();
-  return { ok: true };
+  return { ok: true, alerts };
+}
+
+function addAlert({ userId, kind, groupId, inviteId = null, title, body }) {
+  const alert = {
+    id: crypto.randomUUID(),
+    userId,
+    kind,
+    inviteId,
+    groupId,
+    title,
+    body,
+    createdAt: new Date().toISOString(),
+    read: false,
+    pushed: false,
+  };
+  state.alerts.push(alert);
+  return alert;
+}
+
+function remindIfSoon(userId, group) {
+  if (!group || group.date < todayISO() || group.date > dateFromToday(2)) return [];
+  const exists = state.alerts.some(
+    (alert) => alert.userId === userId && alert.kind === "reminder" && alert.groupId === group.id,
+  );
+  if (exists) return [];
+  return [
+    addAlert({
+      userId,
+      kind: "reminder",
+      groupId: group.id,
+      title: "Session reminder",
+      body: `${group.topic} meets ${formatLongDate(group.date)}, ${formatClock(group.start)}–${formatClock(group.end)} at ${group.location}.`,
+    }),
+  ];
+}
+
+function presentAlert(alert) {
+  const group = state.groups.find((entry) => entry.id === alert.groupId);
+  const invite = alert.inviteId ? state.invites.find((entry) => entry.id === alert.inviteId) : null;
+  return {
+    ...alert,
+    group: group ? presentGroup(group) : null,
+    inviteStatus: invite?.status || null,
+  };
+}
+
+export function listAlerts(userId) {
+  return state.alerts
+    .filter((alert) => alert.userId === userId)
+    .map(presentAlert)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function unreadAlertCount(userId) {
+  return state.alerts.filter((alert) => alert.userId === userId && !alert.read).length;
+}
+
+export function markAlertsRead(userId) {
+  let changed = false;
+  for (const alert of state.alerts) {
+    if (alert.userId === userId && !alert.read) {
+      alert.read = true;
+      changed = true;
+    }
+  }
+  if (changed) persist();
+  return changed;
+}
+
+export function peekUnpushed(userId) {
+  return state.alerts
+    .filter((alert) => alert.userId === userId && !alert.pushed)
+    .map((alert) => ({ id: alert.id, title: alert.title, body: alert.body }));
+}
+
+export function markPushed(ids) {
+  let changed = false;
+  for (const id of ids) {
+    const alert = state.alerts.find((entry) => entry.id === id);
+    if (alert && !alert.pushed) {
+      alert.pushed = true;
+      changed = true;
+    }
+  }
+  if (changed) persist();
+}
+
+export function inviteCandidates(userId, groupId) {
+  const group = state.groups.find((entry) => entry.id === groupId);
+  const user = getUser(userId);
+  if (!group || !user || !group.memberIds.includes(userId)) return [];
+  return state.users
+    .filter((other) => other.id !== userId && !group.memberIds.includes(other.id) && enrolledInGroup(other, group))
+    .map((other) => ({
+      user: publicUser(other),
+      pending: state.invites.some(
+        (invite) => invite.groupId === groupId && invite.toId === other.id && invite.status === "pending",
+      ),
+    }))
+    .sort((a, b) => a.user.name.localeCompare(b.user.name));
+}
+
+export function inviteToGroup(fromId, groupId, toId) {
+  const group = state.groups.find((entry) => entry.id === groupId);
+  const from = getUser(fromId);
+  const to = getUser(toId);
+  if (!group || !from || !to) return { ok: false, error: "That session is no longer listed." };
+  if (!group.memberIds.includes(fromId)) {
+    return { ok: false, error: "Join the session before you invite someone." };
+  }
+  if (group.date < todayISO()) return { ok: false, error: "That session has already passed." };
+  if (group.memberIds.includes(toId)) return { ok: false, error: "They are already in this session." };
+  if (!enrolledInGroup(to, group)) {
+    return { ok: false, error: "Only students in this section can be invited." };
+  }
+  const existing = state.invites.find(
+    (invite) => invite.groupId === groupId && invite.toId === toId && invite.status === "pending",
+  );
+  if (existing) return { ok: false, error: "They already have an invite to this session." };
+  const invite = {
+    id: crypto.randomUUID(),
+    groupId,
+    fromId,
+    toId,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+  };
+  state.invites.push(invite);
+  const alert = addAlert({
+    userId: toId,
+    kind: "invite",
+    inviteId: invite.id,
+    groupId,
+    title: "Study session invite",
+    body: `${from.name} invited you to ${group.topic}, ${formatLongDate(group.date)}, ${formatClock(group.start)}–${formatClock(group.end)} at ${group.location}.`,
+  });
+  persist();
+  return { ok: true, invite, alert };
+}
+
+export function respondToInvite(userId, inviteId, accept) {
+  const invite = state.invites.find((entry) => entry.id === inviteId && entry.toId === userId);
+  if (!invite || invite.status !== "pending") return { ok: false, error: "That invite is no longer open." };
+  if (!accept) {
+    invite.status = "declined";
+    persist();
+    return { ok: true, alerts: [] };
+  }
+  const joined = joinGroup(userId, invite.groupId);
+  if (!joined.ok) return joined;
+  const user = getUser(userId);
+  const group = state.groups.find((entry) => entry.id === invite.groupId);
+  const hostAlert = addAlert({
+    userId: invite.fromId,
+    kind: "accepted",
+    groupId: group.id,
+    title: "Invite accepted",
+    body: `${user.name} joined ${group.topic}.`,
+  });
+  persist();
+  return { ok: true, alerts: [...(joined.alerts || []), hostAlert] };
+}
+
+export function ensureReminders(userId) {
+  const created = [];
+  for (const group of state.groups) {
+    if (!group.memberIds.includes(userId)) continue;
+    created.push(...remindIfSoon(userId, group));
+  }
+  if (created.length) persist();
+  return created;
+}
+
+function icsEscape(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+}
+
+export function sessionsToIcs(groups) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const events = groups.filter(Boolean).map((group) => {
+    const start = `${group.date.replace(/-/g, "")}T${group.start.replace(":", "")}00`;
+    const end = `${group.date.replace(/-/g, "")}T${group.end.replace(":", "")}00`;
+    return [
+      "BEGIN:VEVENT",
+      `UID:${group.id}@lecturepals.local`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${start}`,
+      `DTEND:${end}`,
+      `SUMMARY:${icsEscape(`${group.courseCode} ${group.topic}`)}`,
+      `LOCATION:${icsEscape(group.location)}`,
+      `DESCRIPTION:${icsEscape(`${group.section}. ${group.instructor}.`)}`,
+      "END:VEVENT",
+    ].join("\r\n");
+  });
+  return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//LecturePals//EN", "CALSCALE:GREGORIAN", ...events, "END:VCALENDAR"].join(
+    "\r\n",
+  );
 }
 
 export function sharesSection(userId, otherId) {

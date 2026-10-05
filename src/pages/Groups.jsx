@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth.jsx";
 import { Avatar, SetupGate, useTitle } from "../components/ui.jsx";
+import { downloadTextFile } from "../download.js";
 import {
   LOCATIONS,
   cancelGroup,
@@ -9,10 +10,13 @@ import {
   formatClock,
   formatLongDate,
   groupsForUser,
+  inviteCandidates,
+  inviteToGroup,
   isProfileComplete,
   joinGroup,
   leaveGroup,
   openConversation,
+  sessionsToIcs,
   todayISO,
 } from "../store.js";
 
@@ -30,6 +34,7 @@ export default function Groups() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [confirmCancel, setConfirmCancel] = useState(null);
+  const [inviteFor, setInviteFor] = useState(null);
   useTitle("Study sessions");
 
   const groups = useMemo(() => (ready ? groupsForUser(user.id) : []), [ready, user.id, version]);
@@ -77,6 +82,25 @@ export default function Groups() {
     setNotice("Session cancelled.");
   }
 
+  function invite(groupId, person) {
+    const result = inviteToGroup(user.id, groupId, person.id);
+    if (!result.ok) {
+      setNotice("");
+      setError(result.error);
+      return;
+    }
+    refresh();
+    setError("");
+    setNotice(`Invite emailed to ${person.name}.`);
+  }
+
+  function saveToCalendar(group) {
+    downloadTextFile(
+      `${group.courseCode.replace(/\s+/g, "")}-${group.topic.replace(/\s+/g, "-")}.ics`,
+      sessionsToIcs([group]),
+    );
+  }
+
   function message(otherId) {
     const result = openConversation(user.id, otherId);
     if (!result.ok) {
@@ -91,6 +115,7 @@ export default function Groups() {
     const isMember = group.memberIds.includes(user.id);
     const isHost = group.hostId === user.id;
     const passed = group.date < today;
+    const candidates = inviteFor === group.id ? inviteCandidates(user.id, group.id) : [];
     return (
       <article key={group.id} className="card group-card">
         <div className="split">
@@ -122,8 +147,45 @@ export default function Groups() {
                 Cancel session
               </button>
             )}
+            {!passed && (
+              <button type="button" className="btn small ghost" onClick={() => saveToCalendar(group)}>
+                Add to calendar
+              </button>
+            )}
+            {!passed && isMember && (
+              <button
+                type="button"
+                className="btn small secondary"
+                onClick={() => setInviteFor((current) => (current === group.id ? null : group.id))}
+              >
+                {inviteFor === group.id ? "Close invites" : "Invite"}
+              </button>
+            )}
           </div>
         </div>
+        {inviteFor === group.id && (
+          <div className="invite-box">
+            {candidates.length === 0 ? (
+              <p className="muted">Everyone in this section is already in the session.</p>
+            ) : (
+              <ul className="member-list">
+                {candidates.map((candidate) => (
+                  <li key={candidate.user.id}>
+                    <Avatar name={candidate.user.name} size={32} />
+                    <span>{candidate.user.name}</span>
+                    {candidate.pending ? (
+                      <span className="chip">Invited</span>
+                    ) : (
+                      <button type="button" className="btn small primary" onClick={() => invite(group.id, candidate.user)}>
+                        Send invite
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         {confirmCancel === group.id && (
           <div className="confirm-row">
             <p>Cancel this session? It will disappear for everyone who joined.</p>
@@ -164,9 +226,14 @@ export default function Groups() {
           <p className="muted">Post a topic, time, and campus spot. Only students in that section can see it and join.</p>
         </div>
         {ready && (
-          <button type="button" className="btn primary" onClick={() => setOpen((value) => !value)}>
-            {open ? "Close form" : "New session"}
-          </button>
+          <div className="hero-actions">
+            <Link className="btn secondary" to="/app/calendar">
+              Week view
+            </Link>
+            <button type="button" className="btn primary" onClick={() => setOpen((value) => !value)}>
+              {open ? "Close form" : "New session"}
+            </button>
+          </div>
         )}
       </header>
       {!ready ? (

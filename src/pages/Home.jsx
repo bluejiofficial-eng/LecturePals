@@ -1,7 +1,18 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../auth.jsx";
 import { useTitle } from "../components/ui.jsx";
-import { dashboard, formatBlock, formatClock, formatLongDate, isProfileComplete } from "../store.js";
+import { pushPermission, showPush } from "../notify.js";
+import {
+  dashboard,
+  ensureReminders,
+  formatBlock,
+  formatClock,
+  formatLongDate,
+  isProfileComplete,
+  listAlerts,
+  markPushed,
+} from "../store.js";
 
 function greeting() {
   const hour = new Date().getHours();
@@ -11,12 +22,24 @@ function greeting() {
 }
 
 export default function Home() {
-  const { user, version } = useAuth();
+  const { user, version, refresh } = useAuth();
   useTitle("Home");
   const firstName = user.name.split(" ")[0];
   const ready = isProfileComplete(user);
   const data = dashboard(user.id);
+  const alerts = ready ? listAlerts(user.id).filter((alert) => !alert.read).slice(0, 2) : [];
   void version;
+
+  useEffect(() => {
+    if (!ready) return;
+    const created = ensureReminders(user.id);
+    if (!created.length) return;
+    if (pushPermission() === "granted") {
+      created.forEach((alert) => showPush(alert.title, alert.body));
+      markPushed(created.map((alert) => alert.id));
+    }
+    refresh();
+  }, [ready, user.id, refresh]);
 
   if (!ready) {
     return (
@@ -47,11 +70,26 @@ export default function Home() {
           <Link className="btn primary" to="/app/find">
             Find classmates
           </Link>
-          <Link className="btn secondary" to="/app/groups">
-            Study sessions
+          <Link className="btn secondary" to="/app/calendar">
+            Calendar
           </Link>
         </div>
       </header>
+
+      {alerts.length > 0 && (
+        <section className="stack">
+          <h2>New alerts</h2>
+          {alerts.map((alert) => (
+            <article key={alert.id} className="card">
+              <p className="eyebrow">{alert.title}</p>
+              <p>{alert.body}</p>
+            </article>
+          ))}
+          <Link className="text-link" to="/app/alerts">
+            Open alerts
+          </Link>
+        </section>
+      )}
 
       <section>
         <h2>Your sections</h2>

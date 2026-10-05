@@ -120,4 +120,23 @@ test("campus accounts, section search, sessions, and messages", async () => {
   const sent = store.sendMessage(createdUser.user.id, convo.conversation.id, "Can we review joins?");
   assert.equal(sent.ok, true);
   assert.equal(store.sendMessage(createdUser.user.id, convo.conversation.id, "   ").ok, false);
+
+  assert.equal(store.inviteToGroup("user-maya", "group-norm", "user-avery").ok, false);
+  assert.equal(store.inviteToGroup("user-maya", "group-norm", "user-sam").ok, false);
+  const luisInvite = store.inviteToGroup("user-priya", "group-norm", "user-luis");
+  assert.equal(luisInvite.ok, true);
+  assert.equal(store.listAlerts("user-luis").some((alert) => alert.kind === "invite"), true);
+
+  const accepted = store.respondToInvite("user-avery", "invite-norm", true);
+  assert.equal(accepted.ok, true);
+  const norm = store.groupsForUser("user-avery").find((group) => group.id === "group-norm");
+  assert.equal(norm.memberIds.includes("user-avery"), true);
+  assert.equal(store.respondToInvite("user-avery", "invite-norm", true).ok, false);
+
+  const reminders = store.ensureReminders("user-avery");
+  assert.equal(reminders.length, 0);
+  const ics = store.sessionsToIcs([norm]);
+  assert.match(ics, /BEGIN:VCALENDAR/);
+  assert.match(ics, /Normalization/);
+  assert.match(ics, /Main Library\\, Room 214/);
 });
