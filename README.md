@@ -31,4 +31,6 @@ npm test
 npm run dev
 ```
 
-Open the URL Vite prints (http://localhost:5173). `npm run build` writes a static site to `dist/`.
+Open the URL Vite prints (http://127.0.0.1:5173).
+
+A blank white page at `http://127.0.0.1:5500` means Live Server opened `index.html` directly. Stop Go Live and use `npm run dev` instead. After `npm run build`, Go Live serves the compiled site in `dist`.
