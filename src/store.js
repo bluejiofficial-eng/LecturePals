@@ -1,7 +1,7 @@
 const STORAGE_KEY = "lecturepals-v2";
 const SESSION_KEY = "lecturepals-session";
 
-export const DEMO_EMAIL = "avery.quinn@stateu.edu";
+export const DEMO_EMAIL = "avery.quinn@usc.edu.ph";
 export const DEMO_PASSWORD = "pals2026";
 
 export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -68,7 +68,7 @@ export function isUniversityEmail(email) {
   const [local, domain] = parts;
   if (!local || !domain || local.length > 64 || domain.length > 120) return false;
   if (!/^[a-z0-9._%+-]+$/.test(local)) return false;
-  if (!/^[a-z0-9.-]+\.edu$/.test(domain)) return false;
+  if (!/^[a-z0-9.-]+\.edu\.ph$/.test(domain)) return false;
   if (domain.split(".").some((label) => !label || label.startsWith("-") || label.endsWith("-"))) {
     return false;
   }
@@ -269,7 +269,7 @@ async function createSeed() {
       user({
         id: "user-maya",
         name: "Maya Chen",
-        email: "maya.chen@stateu.edu",
+        email: "maya.chen@usc.edu.ph",
         major: "Information Systems",
         courses: [
           courseRecord("is3103-tth", ["Normalization", "SQL Joins", "ER Diagrams"]),
@@ -282,7 +282,7 @@ async function createSeed() {
       user({
         id: "user-jordan",
         name: "Jordan Hale",
-        email: "jordan.hale@stateu.edu",
+        email: "jordan.hale@usc.edu.ph",
         major: "Computer Science",
         courses: [
           courseRecord("is3103-tth", ["ER Diagrams", "Requirements Gathering"]),
@@ -297,7 +297,7 @@ async function createSeed() {
       user({
         id: "user-priya",
         name: "Priya Shah",
-        email: "priya.shah@stateu.edu",
+        email: "priya.shah@usc.edu.ph",
         major: "Information Systems",
         courses: [courseRecord("is3103-tth", ["SQL Joins", "Transactions"])],
         availability: [
@@ -308,7 +308,7 @@ async function createSeed() {
       user({
         id: "user-luis",
         name: "Luis Ortega",
-        email: "luis.ortega@stateu.edu",
+        email: "luis.ortega@usc.edu.ph",
         major: "Business Analytics",
         courses: [courseRecord("is3103-tth", ["Normalization"])],
         availability: [{ id: "luis-1", day: "Tue", start: "14:00", end: "17:00" }],
@@ -316,7 +316,7 @@ async function createSeed() {
       user({
         id: "user-sam",
         name: "Sam Okonkwo",
-        email: "sam.okonkwo@stateu.edu",
+        email: "sam.okonkwo@usc.edu.ph",
         major: "Information Systems",
         courses: [courseRecord("is3103-mw", ["Normalization", "SQL Joins"])],
         availability: [{ id: "sam-1", day: "Mon", start: "14:00", end: "16:00" }],
@@ -324,7 +324,7 @@ async function createSeed() {
       user({
         id: "user-remy",
         name: "Remy Diaz",
-        email: "remy.diaz@stateu.edu",
+        email: "remy.diaz@usc.edu.ph",
         major: "Business Analytics",
         courses: [courseRecord("is2205-tth", ["Regression", "Dashboards"])],
         availability: [{ id: "remy-1", day: "Tue", start: "13:00", end: "15:00" }],
@@ -471,6 +471,14 @@ async function createSeed() {
 
 function normalize(saved) {
   saved.users ||= [];
+  for (const user of saved.users) {
+    if (typeof user.email !== "string") continue;
+    if (/@usc\.edu$/i.test(user.email)) {
+      user.email = user.email.replace(/@usc\.edu$/i, "@usc.edu.ph");
+    } else if (user.id?.startsWith("user-") && /@stateu\.edu$/i.test(user.email)) {
+      user.email = user.email.replace(/@stateu\.edu$/i, "@usc.edu.ph");
+    }
+  }
   saved.groups ||= [];
   saved.conversations ||= [];
   saved.messages ||= [];
@@ -484,6 +492,7 @@ async function load() {
   if (raw) {
     try {
       state = normalize(JSON.parse(raw));
+      persist();
       return state;
     } catch {
       localStorage.removeItem(STORAGE_KEY);
@@ -520,7 +529,7 @@ export async function signUp({ name, email, password }) {
     return { ok: false, error: "Enter your name." };
   }
   if (!isUniversityEmail(cleanEmail)) {
-    return { ok: false, error: "Use a valid university email that ends in .edu." };
+    return { ok: false, error: "Use a valid university email that ends in .edu.ph." };
   }
   if (String(password || "").length < 8 || String(password).length > 100) {
     return { ok: false, error: "Use a password with at least 8 characters." };
@@ -549,7 +558,7 @@ export async function signUp({ name, email, password }) {
 export async function logIn({ email, password }) {
   const cleanEmail = String(email || "").trim().toLowerCase();
   if (!isUniversityEmail(cleanEmail)) {
-    return { ok: false, error: "Use a valid university email that ends in .edu." };
+    return { ok: false, error: "Use a valid university email that ends in .edu.ph." };
   }
   const user = state.users.find((entry) => entry.email === cleanEmail);
   if (!user || user.passwordHash === "seed-account") {

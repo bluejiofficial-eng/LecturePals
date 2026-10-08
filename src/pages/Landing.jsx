@@ -3,13 +3,13 @@ import { useAuth } from "../auth.jsx";
 import { useTitle, Wordmark } from "../components/ui.jsx";
 
 const STEPS = [
-  ["Sign up with a .edu email", "Accounts stay inside the university, so the people you meet are students."],
+  ["Sign up with a .edu.ph email", "Accounts stay inside the university, so the people you meet are students."],
   ["List your sections and free times", "Add your major, the sections you are taking, and when you can study."],
   ["Find, join, or get reminded", "Search by topic, post a session, and get an invite or reminder before you meet."],
 ];
 
 const FEATURES = [
-  ["01", "Campus sign-in", "Create an account and log in with a university email that ends in .edu."],
+  ["01", "Campus sign-in", "Create an account and log in with a university email that ends in .edu.ph."],
   ["02", "Section profiles", "Share your major, enrolled sections, instructors, syllabus topics, and availability."],
   ["03", "Search and filter", "Find classmates by the exact course section and a specific syllabus topic."],
   ["04", "Study sessions", "Post a topic, date, time, and campus location so students in the section can join."],

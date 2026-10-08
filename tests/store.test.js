@@ -19,9 +19,13 @@ const store = await import("../src/store.js");
 test("campus accounts, section search, sessions, and messages", async () => {
   await store.resetDemo();
 
-  assert.equal(store.isUniversityEmail("maya.chen@stateu.edu"), true);
+  assert.equal(store.isUniversityEmail("maya.chen@stateu.edu"), false);
+  assert.equal(store.isUniversityEmail("25104148@usc.edu.ph"), true);
+  assert.equal(store.isUniversityEmail("MAYA.CHEN@SCHOOL.EDU.PH"), true);
   assert.equal(store.isUniversityEmail("maya.chen@gmail.com"), false);
+  assert.equal(store.isUniversityEmail("maya.chen@usc.edu"), false);
   assert.equal(store.isUniversityEmail("maya.chen@edu.com"), false);
+  assert.equal(store.isUniversityEmail("maya.chen@school.ph"), false);
 
   const badDomain = await store.logIn({ email: "avery.quinn@gmail.com", password: "whatever1" });
   assert.equal(badDomain.ok, false);
@@ -92,10 +96,22 @@ test("campus accounts, section search, sessions, and messages", async () => {
 
   const createdUser = await store.signUp({
     name: "Pat Lee",
-    email: "pat.lee@college.edu",
+    email: "pat.lee@college.edu.ph",
     password: "password1",
   });
   assert.equal(createdUser.ok, true);
+
+  const filipinoCampusUser = await store.signUp({
+    name: "Jamie Cruz",
+    email: "25104148@usc.edu.ph",
+    password: "password1",
+  });
+  assert.equal(filipinoCampusUser.ok, true);
+  store.logOut();
+  const filipinoCampusLogin = await store.logIn({ email: "25104148@usc.edu.ph", password: "password1" });
+  assert.equal(filipinoCampusLogin.ok, true);
+  assert.equal(filipinoCampusLogin.user.email, "25104148@usc.edu.ph");
+
   assert.equal(store.isProfileComplete(createdUser.user), false);
   assert.equal(
     store.updateProfile(createdUser.user.id, { major: "Art", courses: [], availability: [] }).ok,
