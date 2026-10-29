@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../auth.jsx";
 import { unreadAlertCount, unreadCount } from "../store.js";
@@ -8,6 +9,31 @@ function Icon({ children }) {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       {children}
     </svg>
+  );
+}
+
+function ThemeToggle({ isDark, onToggle, compact = false }) {
+  return (
+    <button
+      type="button"
+      className={`theme-toggle${compact ? " compact" : ""}`}
+      onClick={onToggle}
+      aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
+      aria-pressed={isDark}
+      title={`Switch to ${isDark ? "light" : "dark"} mode`}
+    >
+      <Icon>
+        {isDark ? (
+          <>
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" />
+          </>
+        ) : (
+          <path d="M20.5 15.5A8.5 8.5 0 0 1 8.5 3.5 8.5 8.5 0 1 0 20.5 15.5Z" />
+        )}
+      </Icon>
+      <span>{isDark ? "Light mode" : "Dark mode"}</span>
+    </button>
   );
 }
 
@@ -105,11 +131,29 @@ function NavItems({ unread, alerts, onNavigate, links = LINKS }) {
 
 export default function Shell() {
   const { user, version, logout } = useAuth();
+  const [isDark, setIsDark] = useState(() => {
+    try {
+      return window.localStorage.getItem("lecturepals-theme") === "dark";
+    } catch {
+      return false;
+    }
+  });
   const unread = unreadCount(user.id);
   const alerts = unreadAlertCount(user.id);
+  const toggleTheme = () => {
+    setIsDark((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem("lecturepals-theme", next ? "dark" : "light");
+      } catch {
+        // Keep the in-memory preference if storage is unavailable.
+      }
+      return next;
+    });
+  };
 
   return (
-    <div className="shell" data-version={version}>
+    <div className="shell" data-version={version} data-theme={isDark ? "dark" : "light"}>
       <a className="skip" href="#main">
         Skip to content
       </a>
@@ -120,6 +164,7 @@ export default function Shell() {
         <nav className="side-nav" aria-label="Main">
           <NavItems unread={unread} alerts={alerts} />
         </nav>
+        <ThemeToggle isDark={isDark} onToggle={toggleTheme} />
         <div className="side-user">
           <p className="side-name">{user.name}</p>
           <p className="side-email">{user.email}</p>
@@ -131,13 +176,16 @@ export default function Shell() {
       <div className="workspace">
         <header className="topbar">
           <Wordmark />
-          <Link className="bell" to="/app/alerts" aria-label={`Alerts${alerts ? `, ${alerts} unread` : ""}`}>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 16V10a6 6 0 1 1 12 0v6l1.5 2H4.5z" />
-              <path d="M10 19a2 2 0 0 0 4 0" />
-            </svg>
-            {alerts > 0 ? <span className="badge">{alerts}</span> : null}
-          </Link>
+          <div className="topbar-actions">
+            <ThemeToggle isDark={isDark} onToggle={toggleTheme} compact />
+            <Link className="bell" to="/app/alerts" aria-label={`Alerts${alerts ? `, ${alerts} unread` : ""}`}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 16V10a6 6 0 1 1 12 0v6l1.5 2H4.5z" />
+                <path d="M10 19a2 2 0 0 0 4 0" />
+              </svg>
+              {alerts > 0 ? <span className="badge">{alerts}</span> : null}
+            </Link>
+          </div>
         </header>
         <main className="content" id="main">
           <Outlet />

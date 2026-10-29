@@ -77,7 +77,7 @@ export default function AuthPage({ mode }) {
           <p className="muted">
             {isLogin
               ? "Use the university email you signed up with."
-              : "Use an email that ends in .edu. Other addresses are turned away."}
+              : "Use an email that ends in .edu.ph. Other addresses are turned away."}
           </p>
           <form onSubmit={onSubmit} noValidate>
             {!isLogin && (
@@ -100,7 +100,7 @@ export default function AuthPage({ mode }) {
                 onChange={(event) => setEmail(event.target.value)}
                 autoComplete="email"
                 inputMode="email"
-                placeholder="name@university.edu"
+                placeholder="name@university.edu.ph"
                 required
               />
             </label>
