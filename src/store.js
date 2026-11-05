@@ -1013,17 +1013,26 @@ function conversationMessages(conversationId) {
 }
 
 function presentConversation(conversation, userId) {
-  const otherId = conversation.participantIds.find((id) => id !== userId);
+  const members = conversation.participantIds.map((id) => publicUser(getUser(id))).filter(Boolean);
+  const others = members.filter((member) => member.id !== userId);
+  const isGroup = conversation.type === "group" || conversation.participantIds.length > 2;
   const messages = conversationMessages(conversation.id);
   const lastRead = conversation.lastRead?.[userId];
   const unread = messages.filter(
     (message) => message.senderId !== userId && (!lastRead || message.createdAt > lastRead),
   ).length;
+  const other = isGroup ? null : others[0] || null;
   return {
     id: conversation.id,
     participantIds: [...conversation.participantIds],
-    other: publicUser(getUser(otherId)),
-    messages,
+    isGroup,
+    name: isGroup ? conversation.name || "Group chat" : other?.name || "Conversation",
+    other,
+    members,
+    messages: messages.map((message) => ({
+      ...message,
+      senderName: getUser(message.senderId)?.name || "Classmate",
+    })),
     lastMessage: messages.at(-1) || null,
     unread,
   };
@@ -1056,7 +1065,11 @@ export function openConversation(userId, otherId) {
     };
   }
   let conversation = state.conversations.find(
-    (entry) => entry.participantIds.includes(userId) && entry.participantIds.includes(otherId),
+    (entry) =>
+      entry.type !== "group" &&
+      entry.participantIds.length === 2 &&
+      entry.participantIds.includes(userId) &&
+      entry.participantIds.includes(otherId),
   );
   if (!conversation) {
     conversation = {
@@ -1068,6 +1081,87 @@ export function openConversation(userId, otherId) {
     persist();
   }
   return { ok: true, conversation: presentConversation(conversation, userId) };
+}
+
+export function createGroupConversation(userId, participantIds, name) {
+  const user = getUser(userId);
+  if (!user) return { ok: false, error: "Log in again to create a group chat." };
+  const cleanName = String(name || "").trim().replace(/\s+/g, " ");
+  if (!cleanName || cleanName.length > 60) {
+    return { ok: false, error: "Enter a group name of 60 characters or fewer." };
+  }
+  const selectedIds = [...new Set((Array.isArray(participantIds) ? participantIds : []).filter((id) => id !== userId))];
+  if (selectedIds.length < 2) {
+    return { ok: false, error: "Choose at least two classmates for a group chat." };
+  }
+  const memberIds = [userId, ...selectedIds];
+  if (
+    memberIds.some((id, index) =>
+      memberIds.slice(index + 1).some((otherId) => !canMessage(id, otherId)),
+    )
+  ) {
+    return { ok: false, error: "Group chats can include classmates who share a course section with you." };
+  }
+  const conversation = {
+    id: crypto.randomUUID(),
+    type: "group",
+    participantIds: memberIds,
+    name: cleanName,
+    lastRead: {},
+  };
+  state.conversations.push(conversation);
+  persist();
+  return { ok: true, conversation: presentConversation(conversation, userId) };
+}
+
+export function renameConversation(userId, conversationId, name) {
+  const conversation = state.conversations.find(
+    (entry) => entry.id === conversationId && entry.participantIds.includes(userId),
+  );
+  if (!conversation || (conversation.type !== "group" && conversation.participantIds.length < 3)) {
+    return { ok: false, error: "Only group chat members can edit a group name." };
+  }
+  const cleanName = String(name || "").trim().replace(/\s+/g, " ");
+  if (!cleanName || cleanName.length > 60) {
+    return { ok: false, error: "Enter a group name of 60 characters or fewer." };
+  }
+  const actor = getUser(userId);
+  if (conversation.name !== cleanName) {
+    state.messages.push({
+      id: crypto.randomUUID(),
+      conversationId,
+      senderId: userId,
+      type: "system",
+      body: `${actor.name} changed the group name to “${cleanName}”.`,
+      createdAt: new Date().toISOString(),
+    });
+  }
+  conversation.name = cleanName;
+  persist();
+  return { ok: true, conversation: presentConversation(conversation, userId) };
+}
+
+export function leaveConversation(userId, conversationId) {
+  const conversation = state.conversations.find(
+    (entry) => entry.id === conversationId && entry.participantIds.includes(userId),
+  );
+  if (!conversation || (conversation.type !== "group" && conversation.participantIds.length < 3)) {
+    return { ok: false, error: "That group chat is unavailable." };
+  }
+  const user = getUser(userId);
+  conversation.participantIds = conversation.participantIds.filter((id) => id !== userId);
+  conversation.lastRead = { ...conversation.lastRead };
+  delete conversation.lastRead[userId];
+  state.messages.push({
+    id: crypto.randomUUID(),
+    conversationId,
+    senderId: userId,
+    type: "system",
+    body: `${user?.name || "A member"} left the group.`,
+    createdAt: new Date().toISOString(),
+  });
+  persist();
+  return { ok: true };
 }
 
 export function markRead(userId, conversationId) {
@@ -1092,8 +1186,7 @@ export function sendMessage(userId, conversationId, body) {
     (entry) => entry.id === conversationId && entry.participantIds.includes(userId),
   );
   if (!conversation) return { ok: false, error: "That conversation is unavailable." };
-  const otherId = conversation.participantIds.find((id) => id !== userId);
-  if (!canMessage(userId, otherId)) {
+  if (conversation.participantIds.some((id) => id !== userId && !canMessage(userId, id))) {
     return {
       ok: false,
       error: "You can message classmates who share a course section with you.",
