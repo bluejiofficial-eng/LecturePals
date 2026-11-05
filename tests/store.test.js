@@ -137,6 +137,32 @@ test("campus accounts, section search, sessions, and messages", async () => {
   assert.equal(sent.ok, true);
   assert.equal(store.sendMessage(createdUser.user.id, convo.conversation.id, "   ").ok, false);
 
+  assert.equal(store.createGroupConversation("user-avery", ["user-maya"], "Study crew").ok, false);
+  const groupChat = store.createGroupConversation("user-avery", ["user-maya", "user-luis"], "  IS 3103   Crew  ");
+  assert.equal(groupChat.ok, true);
+  assert.equal(groupChat.conversation.isGroup, true);
+  assert.equal(groupChat.conversation.name, "IS 3103 Crew");
+  assert.deepEqual(groupChat.conversation.participantIds, ["user-avery", "user-maya", "user-luis"]);
+  assert.equal(store.openConversation("user-avery", "user-maya").conversation.id, "convo-maya");
+  const groupMessage = store.sendMessage("user-maya", groupChat.conversation.id, "Let's review together.");
+  assert.equal(groupMessage.ok, true);
+  assert.equal(store.getConversation("user-luis", groupChat.conversation.id).messages.at(-1).senderName, "Maya Chen");
+  assert.equal(store.renameConversation("user-luis", groupChat.conversation.id, "SQL Study Team").ok, true);
+  const renamedChat = store.getConversation("user-avery", groupChat.conversation.id);
+  assert.equal(renamedChat.name, "SQL Study Team");
+  assert.equal(renamedChat.messages.at(-1).type, "system");
+  assert.match(renamedChat.messages.at(-1).body, /Luis Ortega changed the group name to “SQL Study Team”/);
+  assert.equal(store.renameConversation("user-avery", "convo-maya", "Renamed direct").ok, false);
+  assert.equal(store.leaveConversation("user-maya", groupChat.conversation.id).ok, true);
+  const afterLeave = store.getConversation("user-avery", groupChat.conversation.id);
+  assert.equal(afterLeave.isGroup, true);
+  assert.equal(afterLeave.name, "SQL Study Team");
+  assert.deepEqual(afterLeave.participantIds, ["user-avery", "user-luis"]);
+  assert.equal(afterLeave.messages.at(-1).type, "system");
+  assert.match(afterLeave.messages.at(-1).body, /Maya Chen left the group/);
+  assert.equal(store.getConversation("user-maya", groupChat.conversation.id), null);
+  assert.equal(store.sendMessage("user-maya", groupChat.conversation.id, "Still here?").ok, false);
+
   assert.equal(store.inviteToGroup("user-maya", "group-norm", "user-avery").ok, false);
   assert.equal(store.inviteToGroup("user-maya", "group-norm", "user-sam").ok, false);
   const luisInvite = store.inviteToGroup("user-priya", "group-norm", "user-luis");
