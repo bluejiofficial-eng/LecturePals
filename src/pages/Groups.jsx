@@ -31,6 +31,7 @@ export default function Groups() {
   const [date, setDate] = useState(todayISO());
   const [start, setStart] = useState("14:00");
   const [end, setEnd] = useState("16:00");
+  const [maxParticipants, setMaxParticipants] = useState("");
   const [location, setLocation] = useState(LOCATIONS[0]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -73,13 +74,22 @@ export default function Groups() {
   function post(event) {
     event.preventDefault();
     setError("");
-    const result = createGroup(user.id, { courseId, topic, date, start, end, location });
+    const result = createGroup(user.id, {
+      courseId,
+      topic,
+      date,
+      start,
+      end,
+      location,
+      maxParticipants: maxParticipants === "" ? null : Number(maxParticipants),
+    });
     if (!result.ok) {
       setError(result.error);
       return;
     }
     refresh();
     setTopic("");
+    setMaxParticipants("");
     setOpen(false);
     setNotice("Session posted to your section.");
   }
@@ -93,13 +103,19 @@ export default function Groups() {
     }
     refresh();
     setError("");
-    setNotice("You joined this session.");
+    setNotice(result.waitlisted ? "The session is full. You are on the waitlist." : "You joined this session.");
   }
 
   function leave(groupId) {
-    leaveGroup(user.id, groupId);
+    const result = leaveGroup(user.id, groupId);
+    if (!result.ok) {
+      setNotice("");
+      setError(result.error);
+      return;
+    }
     refresh();
-    setNotice("You left the session.");
+    setError("");
+    setNotice(result.wasWaitlisted ? "You left the waitlist." : "You left the session.");
   }
 
   function cancel(groupId) {
@@ -140,8 +156,10 @@ export default function Groups() {
 
   function renderGroup(group) {
     const isMember = group.memberIds.includes(user.id);
+    const isWaiting = group.waitlistIds.includes(user.id);
     const isHost = group.hostId === user.id;
     const passed = group.date < today;
+    const full = group.maxParticipants !== null && group.memberIds.length >= group.maxParticipants;
     const candidates = inviteFor === group.id ? inviteCandidates(user.id, group.id) : [];
     return (
       <article key={group.id} className="card group-card">
@@ -157,11 +175,26 @@ export default function Groups() {
             <p className="muted">
               {group.section} · {group.instructor}
             </p>
+            <p className="muted">
+              {group.memberIds.length}
+              {group.maxParticipants !== null ? ` of ${group.maxParticipants}` : ""} participants
+              {group.waitlistIds.length ? ` · ${group.waitlistIds.length} waiting` : ""}
+            </p>
+            {isWaiting ? (
+              <p className="status" role="status">
+                You are #{group.waitlistIds.indexOf(user.id) + 1} on the waitlist.
+              </p>
+            ) : null}
           </div>
           <div className="group-actions">
-            {!passed && !isMember && (
+            {!passed && !isMember && !isWaiting && (
               <button type="button" className="btn small primary" onClick={() => join(group.id)}>
-                Join session
+                {full ? "Join waitlist" : "Join session"}
+              </button>
+            )}
+            {!passed && isWaiting && (
+              <button type="button" className="btn small ghost" onClick={() => leave(group.id)}>
+                Leave waitlist
               </button>
             )}
             {!passed && isMember && !isHost && (
@@ -193,7 +226,7 @@ export default function Groups() {
         {inviteFor === group.id && (
           <div className="invite-box">
             {candidates.length === 0 ? (
-              <p className="muted">Everyone in this section is already in the session.</p>
+              <p className="muted">Everyone in this section has joined or is waiting for the session.</p>
             ) : (
               <ul className="member-list">
                 {candidates.map((candidate) => (
@@ -240,6 +273,16 @@ export default function Groups() {
             </li>
           ))}
         </ul>
+        {isHost && group.waitlist.length > 0 ? (
+          <div className="waitlist-box">
+            <h4>Waitlist</h4>
+            <ol>
+              {group.waitlist.map((person) => (
+                <li key={person.id}>{person.name}</li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
       </article>
     );
   }
@@ -313,6 +356,18 @@ export default function Groups() {
                   <input type="time" value={end} onChange={(event) => setEnd(event.target.value)} required />
                 </label>
               </div>
+              <label className="field">
+                <span>Participant limit (including you)</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={maxParticipants}
+                  onChange={(event) => setMaxParticipants(event.target.value)}
+                  placeholder="No limit"
+                />
+              </label>
+              <p className="muted">Leave the limit blank to keep the session open to everyone in your section.</p>
               <label className="field">
                 <span>Campus location</span>
                 <input

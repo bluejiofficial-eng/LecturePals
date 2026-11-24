@@ -8,8 +8,8 @@ Built for IS 3103 (TTH 10:00 AM – 12:00 PM) by Aguinaldo, Direl Christian P., 
 
 - **Campus sign-in.** Sign up and log in with a university email that ends in `.edu.ph`.
 - **Profiles.** Save a major, enrolled course sections, syllabus topics, and weekly free times.
-- **Search and filter.** Find classmates in your exact section, then narrow by syllabus topic. Other sections of the same course stay hidden.
-- **Study sessions.** Post a topic, date, time, and campus location. Only students in that section can discover and join.
+- **Search and filter.** Find classmates in your exact section, then narrow by syllabus topic. Other sections of the same course stay hidden. Filter study sessions by section, topic, date, or your saved availability.
+- **Study sessions.** Post a topic, date, time, and campus location. Only students in that section can discover and join. Set an optional participant limit; when full, classmates join a FIFO waitlist and are promoted automatically when a place opens.
 - **Direct messages.** Message classmates who share a section and coordinate a session.
 - **Invites, email alerts, and reminders.** Invite a section classmate to a session. They get an alert at their university email, and a browser notification if they allow it. Upcoming sessions also send a reminder.
 - **Calendar.** See the week and download a `.ics` file for the sessions you joined.
