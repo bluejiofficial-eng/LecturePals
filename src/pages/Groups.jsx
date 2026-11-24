@@ -9,6 +9,7 @@ import {
   createGroup,
   formatClock,
   formatLongDate,
+  filterGroupsForUser,
   groupsForUser,
   inviteCandidates,
   inviteToGroup,
@@ -30,29 +31,65 @@ export default function Groups() {
   const [date, setDate] = useState(todayISO());
   const [start, setStart] = useState("14:00");
   const [end, setEnd] = useState("16:00");
+  const [maxParticipants, setMaxParticipants] = useState("");
   const [location, setLocation] = useState(LOCATIONS[0]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [filters, setFilters] = useState({
+    courseId: "",
+    topic: "",
+    fromDate: "",
+    throughDate: "",
+    availabilityOnly: false,
+    sortOrder: "soonest",
+  });
   const [confirmCancel, setConfirmCancel] = useState(null);
   const [inviteFor, setInviteFor] = useState(null);
   useTitle("Study sessions");
 
   const groups = useMemo(() => (ready ? groupsForUser(user.id) : []), [ready, user.id, version]);
+  const filteredGroups = useMemo(
+    () => (ready ? filterGroupsForUser(user.id, filters) : []),
+    [ready, user.id, version, filters],
+  );
   const today = todayISO();
-  const upcoming = groups.filter((group) => group.date >= today);
+  const upcoming = filteredGroups.filter((group) => group.date >= today);
   const past = groups.filter((group) => group.date < today);
+  const selectedFilterCourse = user.courses.find((course) => course.id === filters.courseId);
+  const topics = [...new Set(
+    groups
+      .filter((group) => !selectedFilterCourse || (group.courseCode === selectedFilterCourse.code && group.section === selectedFilterCourse.section))
+      .map((group) => group.topic),
+  )].sort((a, b) => a.localeCompare(b));
+  const invalidDateRange = filters.fromDate && filters.throughDate && filters.fromDate > filters.throughDate;
+  const hasFilters =
+    filters.courseId ||
+    filters.topic ||
+    filters.fromDate ||
+    filters.throughDate ||
+    filters.availabilityOnly ||
+    filters.sortOrder !== "soonest";
   const selectedCourse = user.courses.find((course) => course.id === courseId) || user.courses[0];
 
   function post(event) {
     event.preventDefault();
     setError("");
-    const result = createGroup(user.id, { courseId, topic, date, start, end, location });
+    const result = createGroup(user.id, {
+      courseId,
+      topic,
+      date,
+      start,
+      end,
+      location,
+      maxParticipants: maxParticipants === "" ? null : Number(maxParticipants),
+    });
     if (!result.ok) {
       setError(result.error);
       return;
     }
     refresh();
     setTopic("");
+    setMaxParticipants("");
     setOpen(false);
     setNotice("Session posted to your section.");
   }
@@ -66,13 +103,19 @@ export default function Groups() {
     }
     refresh();
     setError("");
-    setNotice("You joined this session.");
+    setNotice(result.waitlisted ? "The session is full. You are on the waitlist." : "You joined this session.");
   }
 
   function leave(groupId) {
-    leaveGroup(user.id, groupId);
+    const result = leaveGroup(user.id, groupId);
+    if (!result.ok) {
+      setNotice("");
+      setError(result.error);
+      return;
+    }
     refresh();
-    setNotice("You left the session.");
+    setError("");
+    setNotice(result.wasWaitlisted ? "You left the waitlist." : "You left the session.");
   }
 
   function cancel(groupId) {
@@ -113,8 +156,10 @@ export default function Groups() {
 
   function renderGroup(group) {
     const isMember = group.memberIds.includes(user.id);
+    const isWaiting = group.waitlistIds.includes(user.id);
     const isHost = group.hostId === user.id;
     const passed = group.date < today;
+    const full = group.maxParticipants !== null && group.memberIds.length >= group.maxParticipants;
     const candidates = inviteFor === group.id ? inviteCandidates(user.id, group.id) : [];
     return (
       <article key={group.id} className="card group-card">
@@ -130,11 +175,26 @@ export default function Groups() {
             <p className="muted">
               {group.section} · {group.instructor}
             </p>
+            <p className="muted">
+              {group.memberIds.length}
+              {group.maxParticipants !== null ? ` of ${group.maxParticipants}` : ""} participants
+              {group.waitlistIds.length ? ` · ${group.waitlistIds.length} waiting` : ""}
+            </p>
+            {isWaiting ? (
+              <p className="status" role="status">
+                You are #{group.waitlistIds.indexOf(user.id) + 1} on the waitlist.
+              </p>
+            ) : null}
           </div>
           <div className="group-actions">
-            {!passed && !isMember && (
+            {!passed && !isMember && !isWaiting && (
               <button type="button" className="btn small primary" onClick={() => join(group.id)}>
-                Join session
+                {full ? "Join waitlist" : "Join session"}
+              </button>
+            )}
+            {!passed && isWaiting && (
+              <button type="button" className="btn small ghost" onClick={() => leave(group.id)}>
+                Leave waitlist
               </button>
             )}
             {!passed && isMember && !isHost && (
@@ -166,7 +226,7 @@ export default function Groups() {
         {inviteFor === group.id && (
           <div className="invite-box">
             {candidates.length === 0 ? (
-              <p className="muted">Everyone in this section is already in the session.</p>
+              <p className="muted">Everyone in this section has joined or is waiting for the session.</p>
             ) : (
               <ul className="member-list">
                 {candidates.map((candidate) => (
@@ -213,6 +273,16 @@ export default function Groups() {
             </li>
           ))}
         </ul>
+        {isHost && group.waitlist.length > 0 ? (
+          <div className="waitlist-box">
+            <h4>Waitlist</h4>
+            <ol>
+              {group.waitlist.map((person) => (
+                <li key={person.id}>{person.name}</li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
       </article>
     );
   }
@@ -287,6 +357,18 @@ export default function Groups() {
                 </label>
               </div>
               <label className="field">
+                <span>Participant limit (including you)</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={maxParticipants}
+                  onChange={(event) => setMaxParticipants(event.target.value)}
+                  placeholder="No limit"
+                />
+              </label>
+              <p className="muted">Leave the limit blank to keep the session open to everyone in your section.</p>
+              <label className="field">
                 <span>Campus location</span>
                 <input
                   value={location}
@@ -322,10 +404,127 @@ export default function Groups() {
             </p>
           ) : null}
           <section className="stack">
-            <h2>In your sections</h2>
+            <div className="section-label">
+              <h2>In your sections</h2>
+              <p className="muted">Find sessions by course, topic, date, and when you are free.</p>
+            </div>
+            <div className="card session-filters" role="group" aria-label="Filter study sessions">
+              <label className="field">
+                <span>Course section</span>
+                <select
+                  value={filters.courseId}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, courseId: event.target.value, topic: "" }))
+                  }
+                >
+                  <option value="">All sections</option>
+                  {user.courses.map((course) => (
+                    <option key={course.id} value={course.id}>
+                      {course.code} · {course.section}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Topic</span>
+                <select
+                  value={filters.topic}
+                  onChange={(event) => setFilters((current) => ({ ...current, topic: event.target.value }))}
+                >
+                  <option value="">All topics</option>
+                  {topics.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>From</span>
+                <input
+                  type="date"
+                  value={filters.fromDate}
+                  onChange={(event) => setFilters((current) => ({ ...current, fromDate: event.target.value }))}
+                />
+              </label>
+              <label className="field">
+                <span>Through</span>
+                <input
+                  type="date"
+                  value={filters.throughDate}
+                  onChange={(event) => setFilters((current) => ({ ...current, throughDate: event.target.value }))}
+                />
+              </label>
+              <label className="field">
+                <span>Sort by date</span>
+                <select
+                  value={filters.sortOrder}
+                  onChange={(event) => setFilters((current) => ({ ...current, sortOrder: event.target.value }))}
+                >
+                  <option value="soonest">Soonest first</option>
+                  <option value="latest">Latest first</option>
+                </select>
+              </label>
+              <label className="check availability-filter">
+                <input
+                  type="checkbox"
+                  checked={filters.availabilityOnly}
+                  onChange={(event) =>
+                    setFilters((current) => ({ ...current, availabilityOnly: event.target.checked }))
+                  }
+                />
+                <span>Only when I am free</span>
+              </label>
+              {hasFilters ? (
+                <button
+                  type="button"
+                  className="btn small ghost clear-filters"
+                  onClick={() =>
+                    setFilters({
+                      courseId: "",
+                      topic: "",
+                      fromDate: "",
+                      throughDate: "",
+                      availabilityOnly: false,
+                      sortOrder: "soonest",
+                    })
+                  }
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </div>
+            {invalidDateRange ? (
+              <p className="error" role="alert">The start date must be on or before the end date.</p>
+            ) : null}
+            <p className="result-count" aria-live="polite">
+              {upcoming.length} upcoming {upcoming.length === 1 ? "session" : "sessions"}
+            </p>
             {upcoming.length === 0 ? (
               <div className="empty">
-                <p>No upcoming sessions yet. Create one and classmates in the section can join.</p>
+                <p>
+                  {groups.some((group) => group.date >= today)
+                    ? "No upcoming sessions match these filters."
+                    : "No upcoming sessions yet. Create one and classmates in the section can join."}
+                </p>
+                {hasFilters ? (
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    onClick={() =>
+                      setFilters({
+                        courseId: "",
+                        topic: "",
+                        fromDate: "",
+                        throughDate: "",
+                        availabilityOnly: false,
+                        sortOrder: "soonest",
+                      })
+                    }
+                  >
+                    Clear filters
+                  </button>
+                ) : null}
               </div>
             ) : (
               upcoming.map(renderGroup)

@@ -371,6 +371,12 @@ button.chip { border: 0; cursor: pointer; }
 .grow { flex: 1; min-width: 180px; }
 .time-row input, .time-row select { width: auto; }
 .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.session-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.availability-filter { width: fit-content; }
+.clear-filters { justify-self: start; align-self: center; }
+.waitlist-box { border-top: 1px solid var(--line); padding-top: 12px; }
+.waitlist-box h4 { margin-bottom: 6px; }
+.waitlist-box ol { margin: 0; padding-left: 1.4rem; }
 .result-count { font-weight: 700; }
 .group-actions, .hero-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .member-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
