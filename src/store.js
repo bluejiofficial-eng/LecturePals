@@ -480,6 +480,12 @@ function normalize(saved) {
     }
   }
   saved.groups ||= [];
+  for (const group of saved.groups) {
+    if (!Array.isArray(group.waitlistIds)) group.waitlistIds = [];
+    if (!Number.isSafeInteger(group.maxParticipants) || group.maxParticipants < 1) {
+      group.maxParticipants = null;
+    }
+  }
   saved.conversations ||= [];
   saved.messages ||= [];
   saved.invites ||= [];
@@ -498,7 +504,7 @@ async function load() {
       localStorage.removeItem(STORAGE_KEY);
     }
   }
-  state = await createSeed();
+  state = normalize(await createSeed());
   persist();
   return state;
 }
@@ -685,6 +691,7 @@ function presentGroup(group) {
     ...group,
     host: publicUser(getUser(group.hostId)),
     members: group.memberIds.map((id) => publicUser(getUser(id))).filter(Boolean),
+    waitlist: group.waitlistIds.map((id) => publicUser(getUser(id))).filter(Boolean),
   };
 }
 
@@ -746,6 +753,14 @@ export function createGroup(userId, draft) {
     return { ok: false, error: "The end time has to be after the start time." };
   }
   if (!location || location.length > 80) return { ok: false, error: "Add a campus location." };
+  const capacityInput = draft.maxParticipants;
+  const maxParticipants =
+    capacityInput === undefined || capacityInput === null || capacityInput === ""
+      ? null
+      : Number(capacityInput);
+  if (maxParticipants !== null && (!Number.isSafeInteger(maxParticipants) || maxParticipants < 1)) {
+    return { ok: false, error: "The participant limit must be a whole number greater than zero." };
+  }
   const group = {
     id: crypto.randomUUID(),
     courseCode: course.code,
@@ -758,6 +773,8 @@ export function createGroup(userId, draft) {
     location,
     hostId: userId,
     memberIds: [userId],
+    maxParticipants,
+    waitlistIds: [],
   };
   state.groups.push(group);
   persist();
@@ -770,6 +787,37 @@ function enrolledInGroup(user, group) {
   );
 }
 
+function isGroupFull(group) {
+  return group.maxParticipants !== null && group.memberIds.length >= group.maxParticipants;
+}
+
+function promoteWaitlist(group) {
+  const alerts = [];
+  while (group.waitlistIds.length && !isGroupFull(group)) {
+    const userId = group.waitlistIds.shift();
+    if (group.memberIds.includes(userId)) continue;
+    const user = getUser(userId);
+    if (!user || !enrolledInGroup(user, group)) continue;
+
+    group.memberIds.push(userId);
+    const invite = state.invites.find(
+      (entry) => entry.groupId === group.id && entry.toId === userId && entry.status === "waitlisted",
+    );
+    if (invite) invite.status = "accepted";
+    alerts.push(
+      addAlert({
+        userId,
+        kind: "promoted",
+        groupId: group.id,
+        title: "A place opened up",
+        body: `You have been added to ${group.topic} on ${formatLongDate(group.date)}.`,
+      }),
+    );
+    alerts.push(...remindIfSoon(userId, group));
+  }
+  return alerts;
+}
+
 export function joinGroup(userId, groupId) {
   const group = state.groups.find((entry) => entry.id === groupId);
   const user = getUser(userId);
@@ -778,14 +826,38 @@ export function joinGroup(userId, groupId) {
   if (!enrolledInGroup(user, group)) {
     return { ok: false, error: "Only students in this section can join." };
   }
-  if (!group.memberIds.includes(userId)) group.memberIds.push(userId);
   const invite = state.invites.find(
     (entry) => entry.groupId === groupId && entry.toId === userId && entry.status === "pending",
   );
+  if (group.memberIds.includes(userId)) {
+    if (invite) invite.status = "accepted";
+    persist();
+    return { ok: true, waitlisted: false, group: presentGroup(group), alerts: [] };
+  }
+  if (group.waitlistIds.includes(userId)) {
+    if (invite) invite.status = "waitlisted";
+    persist();
+    return { ok: true, waitlisted: true, group: presentGroup(group), alerts: [] };
+  }
+  if (isGroupFull(group)) {
+    group.waitlistIds.push(userId);
+    if (invite) invite.status = "waitlisted";
+    const alert = addAlert({
+      userId,
+      kind: "waitlist",
+      groupId: group.id,
+      title: "Added to the waitlist",
+      body: `You are #${group.waitlistIds.length} on the waitlist for ${group.topic}.`,
+    });
+    persist();
+    return { ok: true, waitlisted: true, group: presentGroup(group), alerts: [alert] };
+  }
+
+  group.memberIds.push(userId);
   if (invite) invite.status = "accepted";
   const alerts = remindIfSoon(userId, group);
   persist();
-  return { ok: true, group: presentGroup(group), alerts };
+  return { ok: true, waitlisted: false, group: presentGroup(group), alerts };
 }
 
 export function leaveGroup(userId, groupId) {
@@ -794,9 +866,22 @@ export function leaveGroup(userId, groupId) {
   if (group.hostId === userId) {
     return { ok: false, error: "Hosts cancel the session instead of leaving it." };
   }
+  if (group.waitlistIds.includes(userId)) {
+    group.waitlistIds = group.waitlistIds.filter((id) => id !== userId);
+    const invite = state.invites.find(
+      (entry) => entry.groupId === groupId && entry.toId === userId && entry.status === "waitlisted",
+    );
+    if (invite) invite.status = "withdrawn";
+    persist();
+    return { ok: true, wasWaitlisted: true, alerts: [] };
+  }
+  if (!group.memberIds.includes(userId)) {
+    return { ok: false, error: "You are not part of this session." };
+  }
   group.memberIds = group.memberIds.filter((id) => id !== userId);
+  const alerts = promoteWaitlist(group);
   persist();
-  return { ok: true };
+  return { ok: true, wasWaitlisted: false, alerts };
 }
 
 export function cancelGroup(userId, groupId) {
@@ -806,7 +891,7 @@ export function cancelGroup(userId, groupId) {
   }
   const host = getUser(userId);
   const alerts = [];
-  for (const memberId of group.memberIds) {
+  for (const memberId of new Set([...group.memberIds, ...group.waitlistIds])) {
     if (memberId === userId) continue;
     alerts.push(
       addAlert({
@@ -819,7 +904,9 @@ export function cancelGroup(userId, groupId) {
     );
   }
   for (const invite of state.invites) {
-    if (invite.groupId === groupId && invite.status === "pending") invite.status = "cancelled";
+    if (invite.groupId === groupId && ["pending", "waitlisted"].includes(invite.status)) {
+      invite.status = "cancelled";
+    }
   }
   state.groups = state.groups.filter((entry) => entry.id !== groupId);
   persist();
@@ -916,7 +1003,13 @@ export function inviteCandidates(userId, groupId) {
   const user = getUser(userId);
   if (!group || !user || !group.memberIds.includes(userId)) return [];
   return state.users
-    .filter((other) => other.id !== userId && !group.memberIds.includes(other.id) && enrolledInGroup(other, group))
+    .filter(
+      (other) =>
+        other.id !== userId &&
+        !group.memberIds.includes(other.id) &&
+        !group.waitlistIds.includes(other.id) &&
+        enrolledInGroup(other, group),
+    )
     .map((other) => ({
       user: publicUser(other),
       pending: state.invites.some(
@@ -936,6 +1029,7 @@ export function inviteToGroup(fromId, groupId, toId) {
   }
   if (group.date < todayISO()) return { ok: false, error: "That session has already passed." };
   if (group.memberIds.includes(toId)) return { ok: false, error: "They are already in this session." };
+  if (group.waitlistIds.includes(toId)) return { ok: false, error: "They are already on the waitlist." };
   if (!enrolledInGroup(to, group)) {
     return { ok: false, error: "Only students in this section can be invited." };
   }
@@ -981,10 +1075,16 @@ export function respondToInvite(userId, inviteId, accept) {
     kind: "accepted",
     groupId: group.id,
     title: "Invite accepted",
-    body: `${user.name} joined ${group.topic}.`,
+    body: joined.waitlisted
+      ? `${user.name} accepted your invite and joined the waitlist for ${group.topic}.`
+      : `${user.name} joined ${group.topic}.`,
   });
   persist();
-  return { ok: true, alerts: [...(joined.alerts || []), hostAlert] };
+  return {
+    ok: true,
+    waitlisted: joined.waitlisted,
+    alerts: [...(joined.alerts || []), hostAlert],
+  };
 }
 
 export function ensureReminders(userId) {
