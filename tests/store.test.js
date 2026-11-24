@@ -181,4 +181,67 @@ test("campus accounts, section search, sessions, and messages", async () => {
   assert.match(ics, /BEGIN:VCALENDAR/);
   assert.match(ics, /Normalization/);
   assert.match(ics, /Main Library\\, Room 214/);
+
+  const savedAveryProfile = store.updateProfile("user-avery", {
+    major: "Information Systems",
+    courses: [
+      { id: "course-avery-is", catalogId: "is3103-tth", topics: ["Normalization", "SQL Joins", "ER Diagrams"] },
+      { id: "course-avery-cs", catalogId: "cs2201-mwf", topics: ["Trees", "Hash Tables"] },
+    ],
+    availability: [
+      {
+        id: "test-availability",
+        day: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
+          new Date(`${norm.date}T00:00:00`).getDay()
+        ],
+        start: "15:00",
+        end: "17:00",
+      },
+    ],
+  });
+  assert.equal(savedAveryProfile.ok, true);
+
+  const isSessions = store.filterGroupsForUser("user-avery", { courseId: "course-avery-is" });
+  assert.deepEqual(isSessions.map((group) => group.id), ["group-norm", "group-er"]);
+  const latest = store.filterGroupsForUser("user-avery", {
+    courseId: "course-avery-is",
+    sortOrder: "latest",
+  });
+  assert.equal(latest[0].id, "group-er");
+
+  const matchingAvailability = store.filterGroupsForUser("user-avery", {
+    courseId: "course-avery-is",
+    topic: "normalization",
+    fromDate: norm.date,
+    throughDate: norm.date,
+    availabilityOnly: true,
+  });
+  assert.deepEqual(matchingAvailability.map((group) => group.id), ["group-norm"]);
+
+  const unavailableProfile = store.updateProfile("user-avery", {
+    major: "Information Systems",
+    courses: [
+      { id: "course-avery-is", catalogId: "is3103-tth", topics: ["Normalization", "SQL Joins", "ER Diagrams"] },
+      { id: "course-avery-cs", catalogId: "cs2201-mwf", topics: ["Trees", "Hash Tables"] },
+    ],
+    availability: [
+      {
+        id: "test-availability",
+        day: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
+          new Date(`${norm.date}T00:00:00`).getDay()
+        ],
+        start: "17:00",
+        end: "18:00",
+      },
+    ],
+  });
+  assert.equal(unavailableProfile.ok, true);
+
+  const unavailable = store.filterGroupsForUser("user-avery", {
+    courseId: "course-avery-is",
+    fromDate: norm.date,
+    throughDate: norm.date,
+    availabilityOnly: true,
+  });
+  assert.deepEqual(unavailable, []);
 });
