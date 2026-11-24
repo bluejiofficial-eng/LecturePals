@@ -58,7 +58,13 @@ export default function Alerts() {
     }
     refresh();
     setError("");
-    setNotice(accept ? "You joined the session. A reminder was sent to your email." : "Invite declined.");
+    setNotice(
+      accept
+        ? result.waitlisted
+          ? "Invite accepted. You are on the waitlist."
+          : "You joined the session. A reminder was sent to your email."
+        : "Invite declined.",
+    );
   }
 
   function saveSession(group) {
@@ -118,6 +124,8 @@ export default function Alerts() {
                         ? "Reminder"
                         : alert.kind === "cancelled"
                           ? "Cancelled"
+                          : alert.kind === "waitlist" || alert.kind === "promoted"
+                            ? "Waitlist"
                           : "Update"}{" "}
                     · {formatMessageTime(alert.createdAt)}
                   </p>
@@ -136,6 +144,7 @@ export default function Alerts() {
                       </>
                     )}
                     {alert.kind === "invite" && alert.inviteStatus === "accepted" && <span className="chip">Accepted</span>}
+                    {alert.kind === "invite" && alert.inviteStatus === "waitlisted" && <span className="chip">On waitlist</span>}
                     {alert.kind === "invite" && alert.inviteStatus === "declined" && <span className="chip">Declined</span>}
                     {alert.group && (alert.kind === "reminder" || alert.inviteStatus === "accepted") && (
                       <button type="button" className="btn small secondary" onClick={() => saveSession(alert.group)}>

@@ -181,4 +181,139 @@ test("campus accounts, section search, sessions, and messages", async () => {
   assert.match(ics, /BEGIN:VCALENDAR/);
   assert.match(ics, /Normalization/);
   assert.match(ics, /Main Library\\, Room 214/);
+
+  const savedAveryProfile = store.updateProfile("user-avery", {
+    major: "Information Systems",
+    courses: [
+      { id: "course-avery-is", catalogId: "is3103-tth", topics: ["Normalization", "SQL Joins", "ER Diagrams"] },
+      { id: "course-avery-cs", catalogId: "cs2201-mwf", topics: ["Trees", "Hash Tables"] },
+    ],
+    availability: [
+      {
+        id: "test-availability",
+        day: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
+          new Date(`${norm.date}T00:00:00`).getDay()
+        ],
+        start: "15:00",
+        end: "17:00",
+      },
+    ],
+  });
+  assert.equal(savedAveryProfile.ok, true);
+
+  const isSessions = store.filterGroupsForUser("user-avery", { courseId: "course-avery-is" });
+  assert.deepEqual(isSessions.map((group) => group.id), ["group-norm", "group-er"]);
+  const latest = store.filterGroupsForUser("user-avery", {
+    courseId: "course-avery-is",
+    sortOrder: "latest",
+  });
+  assert.equal(latest[0].id, "group-er");
+
+  const matchingAvailability = store.filterGroupsForUser("user-avery", {
+    courseId: "course-avery-is",
+    topic: "normalization",
+    fromDate: norm.date,
+    throughDate: norm.date,
+    availabilityOnly: true,
+  });
+  assert.deepEqual(matchingAvailability.map((group) => group.id), ["group-norm"]);
+
+  const unavailableProfile = store.updateProfile("user-avery", {
+    major: "Information Systems",
+    courses: [
+      { id: "course-avery-is", catalogId: "is3103-tth", topics: ["Normalization", "SQL Joins", "ER Diagrams"] },
+      { id: "course-avery-cs", catalogId: "cs2201-mwf", topics: ["Trees", "Hash Tables"] },
+    ],
+    availability: [
+      {
+        id: "test-availability",
+        day: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
+          new Date(`${norm.date}T00:00:00`).getDay()
+        ],
+        start: "17:00",
+        end: "18:00",
+      },
+    ],
+  });
+  assert.equal(unavailableProfile.ok, true);
+
+  const unavailable = store.filterGroupsForUser("user-avery", {
+    courseId: "course-avery-is",
+    fromDate: norm.date,
+    throughDate: norm.date,
+    availabilityOnly: true,
+  });
+  assert.deepEqual(unavailable, []);
+});
+
+test("study session capacity waitlists members in FIFO order and promotes automatically", async () => {
+  await store.resetDemo();
+
+  const created = store.createGroup("user-avery", {
+    courseId: "course-avery-is",
+    topic: "Capacity review",
+    date: store.todayISO(),
+    start: "19:00",
+    end: "20:00",
+    location: "Campus Quad",
+    maxParticipants: 2,
+  });
+  assert.equal(created.ok, true);
+  assert.equal(created.group.maxParticipants, 2);
+
+  const joined = store.joinGroup("user-maya", created.group.id);
+  assert.equal(joined.ok, true);
+  assert.equal(joined.waitlisted, false);
+
+  const priya = store.joinGroup("user-priya", created.group.id);
+  const luis = store.joinGroup("user-luis", created.group.id);
+  assert.equal(priya.waitlisted, true);
+  assert.equal(luis.waitlisted, true);
+  assert.equal(store.joinGroup("user-priya", created.group.id).waitlisted, true);
+
+  const invitation = store.inviteToGroup("user-avery", created.group.id, "user-jordan");
+  assert.equal(invitation.ok, true);
+  const acceptedInvitation = store.respondToInvite("user-jordan", invitation.invite.id, true);
+  assert.equal(acceptedInvitation.ok, true);
+  assert.equal(acceptedInvitation.waitlisted, true);
+  assert.deepEqual(
+    store.groupsForUser("user-avery").find((group) => group.id === created.group.id).waitlistIds,
+    ["user-priya", "user-luis", "user-jordan"],
+  );
+  assert.equal(
+    store.listAlerts("user-jordan").find((alert) => alert.inviteId === invitation.invite.id).inviteStatus,
+    "waitlisted",
+  );
+
+  assert.equal(store.leaveGroup("user-maya", created.group.id).ok, true);
+  let group = store.groupsForUser("user-avery").find((entry) => entry.id === created.group.id);
+  assert.deepEqual(group.memberIds, ["user-avery", "user-priya"]);
+  assert.deepEqual(group.waitlistIds, ["user-luis", "user-jordan"]);
+  assert.equal(store.listAlerts("user-priya").some((alert) => alert.kind === "promoted"), true);
+
+  assert.equal(store.leaveGroup("user-priya", created.group.id).ok, true);
+  assert.equal(store.leaveGroup("user-luis", created.group.id).ok, true);
+  group = store.groupsForUser("user-avery").find((entry) => entry.id === created.group.id);
+  assert.deepEqual(group.memberIds, ["user-avery", "user-jordan"]);
+  assert.deepEqual(group.waitlistIds, []);
+  assert.equal(
+    store.listAlerts("user-jordan").find((alert) => alert.inviteId === invitation.invite.id).inviteStatus,
+    "accepted",
+  );
+
+  const singleSeat = store.createGroup("user-avery", {
+    courseId: "course-avery-is",
+    topic: "Waitlist withdrawal",
+    date: store.todayISO(),
+    start: "20:00",
+    end: "21:00",
+    location: "Campus Quad",
+    maxParticipants: 1,
+  });
+  assert.equal(store.joinGroup("user-maya", singleSeat.group.id).waitlisted, true);
+  assert.equal(store.leaveGroup("user-maya", singleSeat.group.id).wasWaitlisted, true);
+  assert.deepEqual(
+    store.groupsForUser("user-avery").find((group) => group.id === singleSeat.group.id).waitlistIds,
+    [],
+  );
 });
