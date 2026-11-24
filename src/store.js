@@ -701,6 +701,38 @@ export function groupsForUser(userId) {
     .sort((a, b) => `${a.date}${a.start}`.localeCompare(`${b.date}${b.start}`));
 }
 
+export function filterGroupsForUser(userId, filters = {}) {
+  const user = getUser(userId);
+  if (!user) return [];
+
+  const selectedCourse = filters.courseId
+    ? user.courses.find((course) => course.id === filters.courseId)
+    : null;
+  if (filters.courseId && !selectedCourse) return [];
+
+  const topic = String(filters.topic || "").trim().toLowerCase();
+  const groups = groupsForUser(userId).filter((group) => {
+    if (selectedCourse && (group.courseCode !== selectedCourse.code || group.section !== selectedCourse.section)) {
+      return false;
+    }
+    if (topic && group.topic.toLowerCase() !== topic) return false;
+    if (filters.fromDate && group.date < filters.fromDate) return false;
+    if (filters.throughDate && group.date > filters.throughDate) return false;
+    if (filters.availabilityOnly) {
+      const [year, month, day] = group.date.split("-").map(Number);
+      const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(year, month - 1, day).getDay()];
+      const overlaps = user.availability.some(
+        (block) => block.day === weekday && group.start < block.end && group.end > block.start,
+      );
+      if (!overlaps) return false;
+    }
+    return true;
+  });
+
+  if (filters.sortOrder === "latest") groups.reverse();
+  return groups;
+}
+
 export function createGroup(userId, draft) {
   const user = getUser(userId);
   const course = user?.courses.find((entry) => entry.id === draft.courseId);
